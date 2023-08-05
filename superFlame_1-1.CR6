@@ -1,0 +1,439 @@
+>= 'CR6 Series Datalogger>= 
+' SuperFLAMe Field Version 1.0
+
+'=========================== VARIABLES ==============================================
+
+'### Nitrate (SUNA) Variables ###
+'Serial In Declarations
+'Declare a string variables large enough to hold the input string.
+Public SUNA_String As String * 1800 = {"No Suna"}
+Dim SUNA_SplitString(287) As String * 16
+' Data has 1 alphanumeric header, 256 x Int arry, 7 x Ints, 22 x Floats
+' plus one emulator sample number: "emu_sample"
+'Nitrate Variables
+Dim header As String * 16
+Dim year_jday As Long
+Dim hour As Float
+Public no3_uM As Float
+Dim nn03_mg As Float
+Dim abs254 As Float
+Dim abs350 As Float
+Dim br_trace As Float
+Dim spec_avg As Long
+Dim dark_val As Long
+Dim int_tf As Long
+Dim spec_chan(256) As Long
+Public temp_int As Float
+Public temp_spect As Float
+Public temp_lamp As Float
+Dim lamp_ontime As Long
+Dim rel_hum As Float
+Dim volt_main As Float
+Dim volt_lamp As Float
+Dim volt_int As Float
+Dim amps_main As Float
+Dim fit_aux1 As Float
+Dim fit_aux2 As Float
+Dim fit_base1 As Float
+Dim fit_base2 As Float
+Dim fit_rmse As Float
+Dim suna_last_time As Float
+Dim suna_time_delta As Float = {0}
+
+'### Position GPS (1)  Variables ###
+Public GPS_Data(15) 'data array from GPS function
+Dim GPS_SplitString(16) As String * 16 'Assuming up to 16 fields
+Public GPRMC As String * 128 = {"No Puck GPS"} 'One of the GPS messages being transmitted
+Public lat_degrees As Long
+Public lat_minutes As Float
+Public long_degrees As Long
+Public long_minutes As Float
+Public time_sync As String * 4 = {"No"} 'Is it time syncing? Yes or no
+
+'GPRMC Variables
+Public rmc_header As String * 8
+Public time_utc As Long
+Public data_status As String * 4 = {"V"} 'A=valid; V=invalid
+Public latitude As Float
+Dim hemi_lat As String * 4  'N or S
+Public longitude As Float
+Dim hemi_long As String * 4 'E ir W
+Public speed As Float
+Public course As Float
+Dim date_utc As Long
+Dim rmc_checksum As String * 16
+Dim gps_last_time As Long = {0}
+Dim gps_time_delta As Long = {0}
+
+'### Depth GPS (2)  Variables ###
+Public Depth_Data As String * 128
+Dim Depth_SplitString(16) As String * 16 'Assuming up to 16 fields
+Public SDDBT As String * 128 = {"No Depth Data"}
+Public GPGLL As String * 128 'Position data
+Public GPGGA As String * 128 'GPS signal quality
+
+'SDDBT Variables
+Public dbt_header As String * 8
+Public depth As Float  'depth in meters
+Dim units_depth As String * 4 'M
+'GPGLL Variables
+Dim gll_time_utc As Long 'GPGLL time(utc)
+Dim gll_status As String * 1 'V or A
+'GPGGA Variables
+Public num_satellites As Long = {0}
+Public gps_fix_code As Long = {0}
+Public fix_quality As String * 16 = {"Invalid"}
+
+'### EXO Variables ###  
+Public EXO_String As String * 400 = {"NO EXO"}
+Dim EXO_SplitString(16) As String * 16
+'EXO Variables
+Dim sDate As Long '51
+Dim sTime As Long '54
+Public temp As Float '1
+Public specCond As Float '7
+Public pH As Float '18
+Public pressure As Float '20
+Dim chlor_ugL '193
+Public chlor_RFU As Float '194
+Public ODO_percent As Float '211
+Dim ODO_mgL As Float '212
+Public BGApc_RFU As Float '216
+Dim BGApc_ugL As Float '225
+Public turb_FNU As Float '223
+Public fDOM_RFU As Float '227
+Dim fDOM_QSU As Float '228
+Dim extPower As Float '230
+Dim exo_last_time As Long
+Dim exo_time_delta As Long = {0}
+
+'### LGR Greenhouse Gas Analyzer (GGA) Variables ###
+Public GGA_String As String * 400 = {"NO GGA"}
+Dim GGA_SplitString(20) As String * 16
+Dim GGA_DateTime(2) As String * 16
+Dim GGA_TimeStamp(3) As String * 16
+'GGA Variables
+Dim gga_time As String * 16
+Dim gga_second As Float
+Public CH4 As Float
+Public H2O As Float
+Public CO2 As Float
+Dim gga_last_sec As Float
+Dim gga_sec_delta As Float = {0}
+
+'### Setup/Generic/Status Variables ###
+Public i_voltage As Float  'Voltage from the current sensor
+Public current_total As Float  'System current draw
+Public temp_logger As Float    'CR6 internal temp
+Dim NBytesReturned
+Dim I
+Public scan_count As Long = {0}
+Public sec_count_down As Long = {0}
+Dim gps_time_str As String * 6
+Dim gps_date_str As String * 6
+Dim clock_value As String * 19 'yyyy-mm-dd HH:MM:SS
+Dim clock_array(6) As Long
+Alias clock_array(6) = gps_sec
+Public suna_message As String * 32
+Public exo_message As String * 32
+Const LOCAL_TIME_OFFSET As Long = 0
+Public system_status As String * 32
+Public gps_status As Boolean = 0
+Public exo_status As Boolean = 0
+Public gga_status As Boolean = 0
+Public suna_status As Boolean = 0
+
+'============================== FUNCTION DEFS ====================================
+
+Function GetGPS As String * 128
+  GPS(GPS_Data,COMU1,LOCAL_TIME_OFFSET*3600,20,GPRMC)  
+  lat_degrees = GPS_Data(1)
+  lat_minutes = GPS_Data(2)
+  long_degrees = GPS_Data(3)
+  long_minutes = GPS_Data(4)  
+  If (GPS_Data(13) = 10) Then time_sync = "Yes" Else time_sync = "No"  
+  Return(GPRMC)
+EndFunction
+
+'============================== DATA TABLE SETUP ====================================
+
+'### Nitrate ###
+DataTable(SUNA,suna_time_delta<>0,-1) 'trigger when time changes
+  'DataInterval(0,1,Sec,0)
+  TableFile("CRD:SUNA",8,-1,0,1,Day,0,0)
+  Sample(1,year_jday,Long)
+  Sample(1,hour,FP2)
+  Sample(1,no3_uM,FP2)
+  Sample(1,nn03_mg,FP2)
+  Sample(1,abs254,FP2)
+  Sample(1,abs350,FP2)
+  Sample(1,br_trace,FP2)
+  Sample(1,spec_avg,Long)
+  Sample(1,dark_val,Long)
+  Sample(1,int_tf,Long)
+  Sample(256,spec_chan,Long)
+  Sample(1,temp_int,FP2)
+  Sample(1,temp_spect,FP2)
+  Sample(1,temp_lamp,FP2)
+  Sample(1,lamp_ontime,Long)
+  Sample(1,rel_hum,FP2)
+  Sample(1,volt_main,FP2)
+  Sample(1,volt_lamp,FP2)
+  Sample(1,volt_int,FP2)
+  Sample(1,amps_main,FP2)
+  Sample(1,fit_aux1,FP2)
+  Sample(1,fit_aux2,FP2)
+  Sample(1,fit_base1,FP2)
+  Sample(1,fit_base2,FP2)
+  Sample(1,fit_rmse,FP2)
+EndTable
+
+DataTable(GPS,gps_time_delta<>0,-1)
+  TableFile("CRD:Puck",8,-1,0,1,Day,0,0)
+  Sample(1,rmc_header,String)
+  Sample(1,data_status,String)
+  Sample(1,time_utc,Long)
+  Sample(1,date_utc,Long)
+  Sample(1,latitude,IEEE4)
+  Sample(1,longitude,IEEE4)
+  Sample(1,speed,FP2)
+  Sample(1,course,FP2)
+  Sample(1,depth,Float)
+  Sample(1,units_depth,String)
+  Sample(1,num_satellites,Long)
+  Sample(1,fix_quality,String)
+  Sample(1,NBytesReturned,Long)
+EndTable
+
+'### EXO ###
+'DataTable(EXO,TRUE,-1)
+DataTable(EXO,exo_time_delta<>0,-1)
+  TableFile("CRD:EXO",8,-1,0,1,Day,0,0)
+  Sample(1,sDate,Long)
+  Sample(1,sTime,Long)
+  Sample(1,temp,FP2)
+  Sample(1,specCond,FP2)
+  Sample(1,pH,FP2)
+  Sample(1,pressure,FP2)
+  Sample(1,chlor_ugL,FP2)
+  Sample(1,chlor_RFU,FP2)
+  Sample(1,ODO_percent,FP2)
+  Sample(1,ODO_mgL,FP2)
+  Sample(1,BGApc_RFU,FP2)
+  Sample(1,BGApc_ugL,FP2)
+  Sample(1,turb_FNU,FP2)
+  Sample(1,fDOM_RFU,FP2)
+  Sample(1,fDOM_QSU,FP2)
+  Sample(1,extPower,FP2)
+EndTable
+
+'### GGA ###
+'DataTable(GGA,TRUE,-1)
+DataTable(GGA,gga_sec_delta<>0,-1)
+  TableFile("CRD:GGA",8,-1,0,1,Day,0,0)
+  Sample(1,gga_time,String)
+  Sample(1,CH4,IEEE4)
+  Sample(1,H2O,IEEE4)
+  Sample(1,CO2,IEEE4)
+EndTable  
+
+'### Box Metrics ###
+DataTable(BoxMetrics,TRUE,-1)
+	Sample(1,current_total,FP2)
+	Sample(1,temp_logger,FP2)
+EndTable
+
+'============================== MAIN PROGRAM ========================================
+BeginProg
+
+  '   ----------- Open The Serial Ports ---------------------------
+  'U1/U2 for GPS as RS-232, 5V RS-232 -- Don't need to open that port 
+  'SerialOpen(ComU1,4800,16,0,1000,1) 'Puck GPS
+  SerialOpen(ComU3,4800,0,0,1000,1) 'Need Format=0 for echoMAP  
+  SerialOpen(ComC1,57600,0,0,2048,1) 'C1/C2 for Nitrate (SUNA) as standard RS-232
+  SerialOpen(ComC3,38400,0,0,1024,0) ' C3/C4 for EXO as standard RS-232
+  SerialOpen(ComU9,9600,16,0,800,1) ' U9/U10 for GGA as 5V TTL
+ 
+   '  ----- Get the initial GPS Data -----
+    GPRMC = GetGPS()
+
+'  '' Not currently using this initialization function
+'  Scan(5,Sec, 3, 0)
+'
+'    scan_count = scan_count + 1
+'    system_status = "Waiting for sensor startup"
+'    GPRMC = GetGPS()
+'    SplitStr(GPS_SplitString(),GPRMC,",",16,5)
+'    data_status=GPS_SplitString(3)
+'
+' 
+'    If (data_status = "A") Then ExitScan
+'  NextScan
+  
+    ' *********** Delay 75 seconds For Data Logger time sync  *****************
+  sec_count_down = 75
+  Scan(1,Sec, 3, 0)
+    Sprintf(system_status,"Delay: %02d seconds",sec_count_down)
+    sec_count_down = sec_count_down - 1
+    If (sec_count_down <= 0) Then ExitScan
+  NextScan
+
+  scan_count = 0
+
+  '  ******************* Run the Main Scan  *********************************
+  Scan(1,Sec, 3, 0)
+    system_status = "Main Sensor Scan"
+
+    '   ----------- Get The Sensor Serial Messages -------------------
+    'Get the Position GPS Data
+     GPRMC = GetGPS()
+     ' (The Depth GPS data is grabbed below)
+       
+     ' Get the Nitrate Data -- looking for "LF" in the input string
+     SerialInRecord(ComC1,SUNA_String,&h4c46,0,&h0D0A,NBytesReturned,00)
+     ' Get the EXO Data -- looking for date delimiter '#' (35)
+     SerialInRecord(ComC3,EXO_String,35,0,&h0D,NBytesReturned,00)
+     'Get the GGA Data -- looking for date delimiter '/' (47)
+     SerialInRecord(ComU9,GGA_String,47,0,&h0A,NBytesReturned,00)
+     
+    '   ----------- Process Strings Into Fields -------------------------
+    'Parse the GPS Position strings
+    SplitStr(GPS_SplitString(),GPRMC,",",16,5)
+    rmc_header=GPS_SplitString(1)
+    time_utc=GPS_SplitString(2)
+    data_status=GPS_SplitString(3)
+   
+    'latitude=GPS_SplitString(4)
+    'longitude=GPS_SplitString(6)
+    speed=GPS_SplitString(8)
+    course=GPS_SplitString(9)
+    date_utc=GPS_SplitString(10)
+    gps_time_delta=time_utc-gps_last_time
+    gps_last_time=time_utc
+    
+    ' We're using the lat/long from the GPS function so it can be converted
+    ' to decimal degrees
+     latitude=Round(lat_degrees +(lat_minutes/60),8)
+     longitude=Round(long_degrees+(long_minutes/60),8)
+    ' latitude=lat_degrees+(lat_minutes/60)
+    ' longitude=long_degrees+(long_minutes/60)
+     
+    '' CallTable(GPS) after the depth sensor is processed
+
+    'Parse the Depth GPS strings
+    'Gathering three messages so loop SerialInRecord three time.
+    For I=1 To 3
+      SerialInRecord(ComU3,Depth_Data,36,0,&h0D0A,NBytesReturned,11)
+      If InStr (1,Depth_Data,"SDDBT",2) Then
+        SDDBT = Depth_Data
+      ElseIf InStr (1,Depth_Data,"GPGLL",2) Then
+        GPGLL = Depth_Data
+      ElseIf InStr (1,Depth_Data,"GPGGA",2) Then
+        GPGGA = Depth_Data
+      EndIf
+    Next I
+   
+    SplitStr(Depth_SplitString(),GPGLL,",",10,5)
+    gll_time_utc=Depth_SplitString(6)
+    gll_status=Depth_SplitString(7)
+    SplitStr(Depth_SplitString(),SDDBT,",",10,5)  
+    dbt_header=Depth_SplitString(1)
+    depth=Depth_SplitString(4)
+    units_depth=Depth_SplitString(5)
+    SplitStr(Depth_SplitString(),GPGGA,",",10,15)
+    gps_fix_code=Depth_SplitString(7)  
+    num_satellites=Depth_SplitString(8)
+    If (gps_fix_code = 0) Then fix_quality = "Invalid"
+    If (gps_fix_code = 1) Then fix_quality = "GPS"
+    If (gps_fix_code = 2) Then fix_quality = "Differential"    
+    CallTable(GPS)
+
+    'Parse the SUNA string
+    SplitStr(SUNA_SplitString(),SUNA_String,",",287,5)
+    header=SUNA_SplitString(1)
+    year_jday=SUNA_SplitString(2)
+    hour =SUNA_SplitString(3)
+    no3_uM =SUNA_SplitString(4)
+    nn03_mg=SUNA_SplitString(5)
+    abs254=SUNA_SplitString(6)
+    abs350=SUNA_SplitString(7)
+    br_trace=SUNA_SplitString(8)
+    spec_avg=SUNA_SplitString(9)
+    dark_val=SUNA_SplitString(10)
+    int_tf=SUNA_SplitString(11)
+    For I=1 To 256
+      spec_chan(I)=SUNA_SplitString(11+I)
+    Next I
+    temp_int=SUNA_SplitString(268)
+    temp_spect=SUNA_SplitString(269)
+    temp_lamp=SUNA_SplitString(270)
+    lamp_ontime=SUNA_SplitString(271)
+    rel_hum=SUNA_SplitString(272)
+    volt_main=SUNA_SplitString(273)
+    volt_lamp=SUNA_SplitString(274)
+    volt_int=SUNA_SplitString(275)
+    amps_main=SUNA_SplitString(276)
+    fit_aux1=SUNA_SplitString(277)
+    fit_aux2=SUNA_SplitString(278)
+    fit_base1=SUNA_SplitString(279)
+    fit_base2=SUNA_SplitString(280)
+    fit_rmse=SUNA_SplitString(281)
+    suna_time_delta = hour - suna_last_time
+    suna_last_time = hour
+    CallTable(SUNA)
+    
+  'Parse the EXO string
+   SplitStr(EXO_SplitString(),EXO_String,",",16,5)
+   sDate=EXO_SplitString(1)
+   sTime=EXO_SplitString(2)
+   temp=EXO_SplitString(3)
+   specCond=EXO_SplitString(4)
+   pH=EXO_SplitString(5)
+   pressure=EXO_SplitString(6)
+   chlor_ugL=EXO_SplitString(7)
+   chlor_RFU=EXO_SplitString(8)
+   ODO_percent=EXO_SplitString(9)
+   ODO_mgL=EXO_SplitString(10)
+   BGApc_RFU=EXO_SplitString(11)
+   turb_FNU=EXO_SplitString(12)
+   BGApc_ugL=EXO_SplitString(13)
+   fDOM_RFU=EXO_SplitString(14)
+   fDOM_QSU=EXO_SplitString(15)
+   extPower=EXO_SplitString(16)
+   exo_time_delta = sTime - exo_last_time
+   exo_last_time = sTime
+   CallTable(EXO)
+ 
+  'Parse the GGA string
+   SplitStr(GGA_SplitString(),GGA_String,",",20,5)
+   SplitStr(GGA_DateTime(),GGA_SplitString(1)," ",2,5)
+   gga_time=GGA_DateTime(2)
+   SplitStr(GGA_TimeStamp(),gga_time,":",3,5) 
+   gga_second=GGA_TimeStamp(3)
+   CH4=GGA_SplitString(2)
+   H2O=GGA_SplitString(4)
+   CO2=GGA_SplitString(6)
+   gga_sec_delta = gga_second - gga_last_sec
+   gga_last_sec = gga_second
+   CallTable(GGA)
+   
+   VoltSe(i_voltage,1,mV5000,U7,0,0,60,1,0)
+   current_total = ((i_voltage-2500)/1000)*(50/1.5)
+   PanelTemp(temp_logger,15000)
+   CallTable(BoxMetrics)
+
+   scan_count = scan_count + 1
+   
+  'Check sensor status 
+    'GPS -- both puck and depth sensors need to be running
+    If ((gps_fix_code>0) & (data_status="A") & (time_sync="Yes")) Then gps_status = 1 Else gps_status = 0 
+    'EXO
+    If ((pH>0) & (pH<14)) Then exo_status = 1 Else exo_status = 0 
+    'GGA
+    If ((CO2>0) & (CO2<10000)) Then gga_status = 1 Else gga_status = 0
+    'Suna
+    If ((no3_uM>0) & (temp_lamp<32)) Then suna_status = 1 Else suna_status = 0 
+
+  NextScan
+EndProg
+
